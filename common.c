@@ -1,6 +1,7 @@
 #include "common.h"
 
 void putchar(char c);
+int getchar(void);
 
 void printf(const char *fmt, ...) {
     va_list vargs;
@@ -57,7 +58,46 @@ void printf(const char *fmt, ...) {
     }
     end:
         va_end(vargs);
+}
 
+char *readline (char *prompt) {
+    if (prompt != NULL) printf("%s", prompt);
+    static char buf[128];
+    int i = 0;
+    while (1) {
+        char c = getchar();
+        if (c == 0x1B) { // ignore escape sequence
+            int c1 = getchar();
+            if (c1 == '[') {
+                int c2 = getchar();
+                if ((c2 >= 'A' && c2 <= 'D')) { // up, down, right, left
+                } else {
+                    while (c2 >= '0' && c2 <= '9') {
+                        int c3 = getchar();
+                        if (c3 == '~') break;
+                        c2 = c3;
+                    }
+                }
+            }
+            continue;
+        } else if (i == sizeof(buf) - 1) {
+            printf("\ntoo long command!\n");
+            break;
+        } else if (c == '\r' || c == '\n') {
+            putchar('\n');
+            buf[i++] = '\0';
+            return buf;
+        } else if (c == 127 || c == '\b') {
+            if (i > 0) {
+                buf[i--] = '\0';
+                printf("\b \b");
+            }
+        } else {
+            putchar(c);
+            buf[i++] = c;
+        }
+    }
+    return NULL;
 }
 
 void *memcpy(void *dst, const void *src, size_t n) {
@@ -93,7 +133,7 @@ char *strcpy_s(char *dst, size_t dst_size, const char *src) {
 
 int strcmp(const char *s1, const char *s2) {
     while (*s1 && *s2) {
-        if (*s1 != s2) break;
+        if (*s1 != *s2) break;
         s1++; s2++;
     }
     return *(unsigned char *) s1 - *(unsigned char *) s2;
