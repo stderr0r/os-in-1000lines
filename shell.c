@@ -24,6 +24,37 @@ void cmd_echo(int argc, char *argv[]) {
     putchar('\n');
 }
 
+void cmd_cat(int argc, char *argv[]) {
+    static char buf[256];
+    for (int i = 1; i < argc; i++) {
+        int len = readfile(argv[i], buf, sizeof(buf));
+        if (len != -1) {
+            buf[len] = '\0';
+            printf("%s\n", buf);
+        }
+    }
+}
+
+void cmd_write(int argc, char *argv[]) {
+    if (argc < 3) {
+        printf("usage: write <filename> <text...>\n");
+        return;
+    }
+    char buf[256];
+    int pos = 0;
+
+    for (int i = 2; i < argc; i++) {
+        const char *s = argv[i];
+        while (*s != '\0') {
+            buf[pos++] = *s++;
+        }
+        if (i < argc-1) buf[pos++] = ' ';
+    }
+    buf[pos] = '\0';
+    writefile(argv[1], buf, pos);
+
+}
+
 void main(void) {
     char *argv[MAX_ARGS];
 
@@ -35,6 +66,8 @@ void main(void) {
         if (!strcmp(argv[0], "ping")) printf("pong\n");
         else if (!strcmp(argv[0], "exit")) exit();
         else if (!strcmp(argv[0], "echo")) cmd_echo(argc, argv);
+        else if (!strcmp(argv[0], "cat")) cmd_cat(argc, argv);
+        else if (!strcmp(argv[0], "write")) cmd_write(argc, argv);
         else printf("unknown command: %s\n", cmdline);
     }
 }
