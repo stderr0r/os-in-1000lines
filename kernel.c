@@ -9,6 +9,8 @@ extern char __kernel_base[];
 extern char __bss[], __bss_end[], __stack_top[];
 extern char __free_ram[], __free_ram_end[];
 
+extern char _binary_shell_bin_start[], _binary_shell_bin_size[];
+
 struct sbiret sbi_call(
     long arg0, long arg1, long arg2, long arg3,
     long arg4, long arg5, long fid, long eid
@@ -34,12 +36,8 @@ void putchar(char c) {
     sbi_call(c, 0, 0, 0, 0, 0, 0, 1); // console putchar
 }
 
-void handle_trap(struct trap_frame *f) {
-    uint32_t scause = READ_CSR(scause);
-    uint32_t stval = READ_CSR(stval);
-    uint32_t user_pc = READ_CSR(sepc);
-
-    PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
+long getchar(void) {
+    return ((struct sbiret) sbi_call(0, 0, 0, 0, 0, 0, 0, 2)).error;
 }
 
 __attribute__((naked))
@@ -193,9 +191,20 @@ __attribute__((naked)) void switch_context(uint32_t *prev_sp,
     );
 }
 
+__attribute__((naked)) void user_entry(void) {
+    __asm__ __volatile__(
+        "csrw sepc, %[sepc]\n"
+        "csrw sstatus, %[sstatus]\n"
+        "sret\n"
+        :
+        : [sepc] "r" (USER_BASE),
+          [sstatus] "r" (SSTATUS_SPIE)
+    );
+}
+
 struct process procs[PROCS_MAX];
 
-struct process *create_process(uint32_t pc) {
+struct process *create_process(const void *image, size_t image_size) {
     // 空いているプロセス管理構造体を探す
     struct process *proc = NULL;
     int i;
@@ -211,12 +220,23 @@ struct process *create_process(uint32_t pc) {
     // switch_context() で復帰できるように、スタックに呼び出し先保存レジスタを積む
     uint32_t *sp = (uint32_t *) &proc->stack[sizeof(proc->stack)];
     for (int i = 0; i < 12; i++) *--sp = 0; // s0 ~ s11
-    *--sp = (uint32_t) pc; // ra
+    *--sp = (uint32_t) user_entry; // ra
 
     uint32_t *page_table = (uint32_t *) alloc_pages(1);
 
+    // mapping kernel pages
     for (paddr_t paddr = (paddr_t) __kernel_base; paddr < (paddr_t) __free_ram_end; paddr += PAGE_SIZE) {
         map_page(page_table, paddr, paddr, PAGE_R | PAGE_W | PAGE_X);
+    }
+
+    //mapping user pages
+    for (uint32_t offset = 0; offset < image_size; offset += PAGE_SIZE) {
+        paddr_t page = alloc_pages(1);
+        size_t copy_size = MAX(PAGE_SIZE, image_size - offset);
+
+        memcpy((void *) page, image + offset, copy_size);
+
+        map_page(page_table, USER_BASE + offset, page, PAGE_U | PAGE_R | PAGE_W | PAGE_X);
     }
 
     // 各フィールドを初期化
@@ -260,37 +280,50 @@ void yield(void) {
 }
 
 
-struct process *proc_a;
-struct process *proc_b;
-
-void proc_a_entry(void) {
-    printf("starting process A\n");
-    while (1) {
-        putchar('A');
-        yield();
-        delay();
+void handle_syscall(struct  trap_frame *f) {
+    switch (f->a3) {
+    case SYS_PUTCHAR:
+        putchar(f->a0);
+        break;
+    case SYS_GETCHAR:
+        while (1) {
+            long c = getchar();
+            if (c >= 0) {
+                f->a0 = c;
+                break;
+            }
+            yield();
+        }
+        break;
+    default:
+        PANIC("unexpected syscall a3=%x\n", f->a3);
     }
-}
+};
 
-void proc_b_entry(void) {
-    printf("starting process B\n");
-    while (1) {
-        putchar('B');
-        yield();
-        delay();
+void handle_trap(struct trap_frame *f) {
+    uint32_t scause = READ_CSR(scause);
+    uint32_t stval = READ_CSR(stval);
+    uint32_t user_pc = READ_CSR(sepc);
+
+    if (scause == SCAUSE_ECALL) {
+        handle_syscall(f);
+        user_pc += 4;
+    } else {
+        PANIC("unexpected trap scause=%x, stval=%x, sepc=%x\n", scause, stval, user_pc);
     }
+
+    WRITE_CSR(sepc, user_pc);
 }
 
 void kernel_main(void) {
     memset(__bss, 0, (size_t) __bss_end - (size_t) __bss);
     WRITE_CSR(stvec, (uint32_t) kernel_entry);
 
-    idle_proc = create_process((uint32_t) NULL);
+    idle_proc = create_process(NULL, 0);
     idle_proc->pid = 0;
     current_proc = idle_proc;
 
-    proc_a = create_process((uint32_t) proc_a_entry);
-    proc_b = create_process((uint32_t) proc_b_entry);
+    create_process(_binary_shell_bin_start, (size_t) _binary_shell_bin_size);
 
     yield();
     PANIC("switched to idle process");
