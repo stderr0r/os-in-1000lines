@@ -157,7 +157,7 @@ struct virtio_blk_req {
 } __attribute__((packed));
 
 // file system definition
-#define FILES_MAX 2
+#define FILES_MAX 8
 #define DISK_MAX_SIZE align_up(sizeof(struct file) * FILES_MAX, SECTOR_SIZE)
 
 struct tar_header {
@@ -187,4 +187,3 @@ struct file {
     char data[1024];  // ファイルの内容
     size_t size;      // ファイルサイズ
 };
-

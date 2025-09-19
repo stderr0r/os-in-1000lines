@@ -339,7 +339,7 @@ void virtio_blk_init(void) {
 
     // ディスクの容量を取得
     blk_capacity = virtio_reg_read64(VIRTIO_REG_DEVICE_CONFIG + 0) * SECTOR_SIZE;
-    printf("virtio-blk: capacity is %d bytes\n", blk_capacity);
+    // printf("virtio-blk: capacity is %d bytes\n", blk_capacity);
 
     // デバイスへの処理要求を格納する領域を確保
     blk_req_paddr = alloc_pages(align_up(sizeof(*blk_req), PAGE_SIZE) / PAGE_SIZE);
@@ -433,7 +433,7 @@ void fs_init(void) {
         strcpy(file->name, header->name);
         memcpy(file->data, header->data, file_size);
         file->size = file_size;
-        printf("file: %s, size=%d\n", file->name, file->size);
+        // printf("file: %s, size=%d\n", file->name, file->size);
 
         offset += align_up(sizeof(struct tar_header) + file_size, SECTOR_SIZE);
     }
@@ -482,7 +482,7 @@ void fs_flush(void) {
 struct file *fs_lookup(const char *filename) {
     for (int i = 0; i < FILES_MAX; i++) {
         struct file *file = &files[i];
-        if (!strcmp(file->name, filename)) return file;
+        if (!strcmp(file->name, filename) && file->in_use) return file;
     }
     return NULL;
 }
@@ -525,6 +525,67 @@ void handle_syscall(struct  trap_frame *f) {
         }
         f->a0 = len;
         break;
+    case SYS_LISTFILES: {
+        char *buf = (char *) f->a0;
+        int len = f->a1;
+        int pos = 0;
+        for (int i = 0; i < FILES_MAX; i++) {
+            if (files[i].in_use) {
+                int filename_len = strlen(files[i].name);
+                if (pos + filename_len + 1 > len) {
+                    break;
+                }
+                strcpy(&buf[pos], files[i].name);
+                pos += filename_len;
+                buf[pos++] = '\n';
+            }
+        }
+        f->a0 = pos;
+        break;
+    }
+    case SYS_CREATEFILE: {
+        const char *filename = (const char *) f->a0;
+        struct file *file = fs_lookup(filename);
+        if (file != NULL) {
+            printf("file already exists: %s\n", filename);
+            f->a0 = -1;
+            return;
+        }
+        for (int i = 0; i < FILES_MAX; i++) {
+            if (!files[i].in_use) {
+                file = &files[i];
+                break;
+            }
+        }
+
+        if (!file) {
+            f->a0 = -1;
+            break;
+        }
+
+        file->in_use = true;
+        strcpy(file->name, filename);
+        file->size = 0;
+        memset(file->data, 0, sizeof(file->data));
+        fs_flush();
+        f->a0 = 0;
+        break;
+    }
+    case SYS_DELETEFILE: {
+        const char *filename = (const char *) f->a0;
+        struct file *file = fs_lookup(filename);
+        if (!file) {
+            f->a0 = -1;
+            break;
+        }
+
+        file->in_use = false;
+        file->size = 0;
+        memset(file->data, 0, sizeof(file->data));
+        fs_flush();
+        f->a0 = 0;
+        break;
+    }
     default:
         PANIC("unexpected syscall a3=%x\n", f->a3);
     }

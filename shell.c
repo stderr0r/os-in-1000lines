@@ -37,7 +37,7 @@ void cmd_cat(int argc, char *argv[]) {
 
 void cmd_write(int argc, char *argv[]) {
     if (argc < 3) {
-        printf("usage: write <filename> <text...>\n");
+        printf("usage: write <filename> <text>\n");
         return;
     }
     char buf[256];
@@ -55,6 +55,35 @@ void cmd_write(int argc, char *argv[]) {
 
 }
 
+void cmd_ls(void) {
+    char buf[256];
+    int len = listfiles(buf, sizeof(buf));
+    if (len > 0) {
+        buf[len] = '\0';
+        printf("%s", buf);
+    }
+}
+
+void cmd_touch(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("usage: touch <filename>\n");
+        return;
+    }
+    if (createfile(argv[1]) != 0) {
+        printf("failed to create file: %s\n", argv[1]);
+    }
+}
+
+void cmd_rm(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("usage: rm <filename>\n");
+        return;
+    }
+    if (deletefile(argv[1]) != 0) {
+        printf("failed to delete file: %s\n", argv[1]);
+    }
+}
+
 void main(void) {
     char *argv[MAX_ARGS];
 
@@ -68,6 +97,9 @@ void main(void) {
         else if (!strcmp(argv[0], "echo")) cmd_echo(argc, argv);
         else if (!strcmp(argv[0], "cat")) cmd_cat(argc, argv);
         else if (!strcmp(argv[0], "write")) cmd_write(argc, argv);
+        else if (!strcmp(argv[0], "ls")) cmd_ls();
+        else if (!strcmp(argv[0], "touch")) cmd_touch(argc, argv);
+        else if (!strcmp(argv[0], "rm")) cmd_rm(argc, argv);
         else printf("unknown command: %s\n", cmdline);
     }
 }

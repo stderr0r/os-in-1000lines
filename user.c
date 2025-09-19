@@ -36,6 +36,18 @@ int writefile(const char *filename, const char *buf, int len) {
     return syscall(SYS_WRITEFILE, (int) filename, (int) buf, len);
 }
 
+int listfiles(char *buf, int len) {
+    return syscall(SYS_LISTFILES, (int) buf, len, 0);
+}
+
+int createfile(const char *filename) {
+    return syscall(SYS_CREATEFILE, (int) filename, 0, 0);
+}
+
+int deletefile(const char *filename) {
+    return syscall(SYS_DELETEFILE, (int) filename, 0, 0);
+}
+
 __attribute__((section(".text.start")))
 __attribute__((naked))
 void start(void) {
@@ -46,4 +58,3 @@ void start(void) {
         :: [stack_top] "r"(__stack_top)
     );
 }
-
